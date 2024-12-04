@@ -9,7 +9,6 @@
 
 #include "driver/gpio.h"
 #include "driver/spi_common.h"
-#include <driver/i2c.h>
 
 #define DISP_WIDTH 240
 #define DISP_HEIGHT 240
@@ -34,19 +33,6 @@ void init_spi_bus(){
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
 }
 
-void i2c_setup(){
-    i2c_config_t i2c_config =
-            {
-                    .mode = I2C_MODE_MASTER,
-                    .sda_io_num = GPIO_NUM_8,
-                    .sda_pullup_en = GPIO_PULLUP_ENABLE,
-                    .scl_io_num = GPIO_NUM_9,
-                    .scl_pullup_en = GPIO_PULLUP_ENABLE,
-                    .master.clk_speed =  10 * 10000,
-            };
-    i2c_param_config(I2C_NUM_0, &i2c_config);
-    i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0);
-}
 
 void init_lvgl_disp(){
     const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
@@ -119,17 +105,10 @@ void init_lvgl_scene(void){
 
 void app_main() {
 
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-    i2c_setup();
     init_spi_bus();
     init_lvgl_disp();
     init_lvgl_scene();
 
     vTaskDelay(40 / portTICK_PERIOD_MS);
     esp_lcd_panel_disp_on_off(main_lcd_panel_handle, true);
-
-    while (1){
-        ESP_LOGI("perf", "mem: %lu", esp_get_free_heap_size());
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
 }
