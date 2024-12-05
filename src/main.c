@@ -16,7 +16,7 @@
 
 #define MATH_PI 3.1415926
 
-#define PERF_MEM_USAGE 1
+#define PERF_MEM_USAGE 0
 
 #define DISP_WIDTH 240
 #define DISP_HEIGHT 240
