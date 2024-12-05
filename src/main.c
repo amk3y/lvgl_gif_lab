@@ -1,4 +1,3 @@
-#include <sys/cdefs.h>
 #include "freertos/FreeRTOS.h"
 
 #include "esp_log.h"
@@ -211,13 +210,13 @@ void enter_lvgl_scene(void){
     lv_image_set_src(lv_image_logo, &image_logo);
     lv_obj_align(lv_image_logo, LV_ALIGN_CENTER, 0, 0);
 
-    lv_anim_t intro_anim;
-    lv_anim_init(&intro_anim);
-    lv_anim_set_duration(&intro_anim, 1000);
-    lv_anim_set_var(&intro_anim, lv_image_logo);
-    lv_anim_set_values(&intro_anim,0, 255);
-    lv_anim_set_path_cb(&intro_anim, lv_anim_path_ease_in_out);
-    lv_anim_set_custom_exec_cb(&intro_anim, anim_cb_set_opa);
+    lv_anim_t intro_fade_in_anim;
+    lv_anim_init(&intro_fade_in_anim);
+    lv_anim_set_duration(&intro_fade_in_anim, 1000);
+    lv_anim_set_var(&intro_fade_in_anim, lv_image_logo);
+    lv_anim_set_values(&intro_fade_in_anim,0, 255);
+    lv_anim_set_path_cb(&intro_fade_in_anim, lv_anim_path_ease_in_out);
+    lv_anim_set_custom_exec_cb(&intro_fade_in_anim, anim_cb_set_opa);
 
     lv_anim_t intro_fade_out_anim;
     lv_anim_init(&intro_fade_out_anim);
@@ -229,7 +228,7 @@ void enter_lvgl_scene(void){
     lv_anim_set_completed_cb(&intro_fade_out_anim, anim_intro_end);
 
     lv_anim_timeline_t* timeline = lv_anim_timeline_create();
-    lv_anim_timeline_add(timeline, 10, &intro_anim);
+    lv_anim_timeline_add(timeline, 10, &intro_fade_in_anim);
     lv_anim_timeline_add(timeline, 2000, &intro_fade_out_anim);
 
     lv_anim_timeline_start(timeline);
