@@ -16,6 +16,8 @@
 
 #define MATH_PI 3.1415926
 
+#define PERF_MEM_USAGE 1
+
 #define DISP_WIDTH 240
 #define DISP_HEIGHT 240
 #define DISP_DRAW_BUFFER_HEIGHT 40
@@ -24,8 +26,10 @@
 #define DISP_SCLK GPIO_NUM_4
 #define DISP_MOSI GPIO_NUM_6
 
-#define PARTICLE_DIAMOND_POOL_SIZE 8
-#define PARTICLE_EMERALD_POOL_SIZE 8
+#define PARTICLE_DIAMOND_POOL_SIZE 6
+#define PARTICLE_EMERALD_POOL_SIZE 6
+#define PARTICLE_IRON_INGOT_POOL_SIZE 6
+#define PARTICLE_GOLD_INGOT_POOL_SIZE 6
 
 #define PARTICLE_VERTICAL_BOUND_MIN (-96)
 #define PARTICLE_VERTICAL_BOUND_MAX 96
@@ -38,6 +42,8 @@ static lv_disp_t* lvgl_main_display_handle;
 static lv_obj_t* lv_image_diamond_pickaxe;
 static lv_obj_t** lv_image_diamonds;
 static lv_obj_t** lv_image_emeralds;
+static lv_obj_t** lv_image_iron_ingots;
+static lv_obj_t** lv_image_gold_ingots;
 
 void init_spi_bus(){
     const spi_bus_config_t buscfg = {
@@ -182,9 +188,13 @@ void init_lvgl_scene(void){
     LV_IMAGE_DECLARE(image_diamond_pickaxe);
     LV_IMAGE_DECLARE(image_diamond);
     LV_IMAGE_DECLARE(image_emerald);
+    LV_IMAGE_DECLARE(image_iron_ingot);
+    LV_IMAGE_DECLARE(image_gold_ingot);
 
     lv_image_diamonds = init_particle_pool(PARTICLE_DIAMOND_POOL_SIZE, &image_diamond);
     lv_image_emeralds = init_particle_pool(PARTICLE_EMERALD_POOL_SIZE, &image_emerald);
+    lv_image_iron_ingots = init_particle_pool(PARTICLE_IRON_INGOT_POOL_SIZE, &image_iron_ingot);
+    lv_image_gold_ingots = init_particle_pool(PARTICLE_GOLD_INGOT_POOL_SIZE, &image_gold_ingot);
 
     lv_image_diamond_pickaxe = lv_gif_create(lv_screen_active());
     lv_gif_set_src(lv_image_diamond_pickaxe, &image_diamond_pickaxe);
@@ -201,5 +211,17 @@ void app_main() {
 
     vTaskDelay(40 / portTICK_PERIOD_MS);
     esp_lcd_panel_disp_on_off(main_lcd_panel_handle, true);
-    
+
+#if PERF_MEM_USAGE == 1
+    while (1) {
+        lv_mem_monitor_t lv_mem_info;
+        lv_mem_monitor(&lv_mem_info);
+        ESP_LOGI("perf", "heap: %lu | lvgl: %zu/%zu",
+                 esp_get_free_heap_size(),
+                 lv_mem_info.free_size,
+                 lv_mem_info.total_size
+        );
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+#endif
 }
