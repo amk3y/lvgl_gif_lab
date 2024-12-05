@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 
 #include "esp_log.h"
+#include "esp_random.h"
 
 #include "lvgl.h"
 #include "esp_lvgl_port.h"
@@ -11,7 +12,7 @@
 #include "driver/gpio.h"
 #include "driver/spi_common.h"
 
-#include "math.h"
+#include "stdlib.h"
 
 #define MATH_PI 3.1415926
 
@@ -23,10 +24,20 @@
 #define DISP_SCLK GPIO_NUM_4
 #define DISP_MOSI GPIO_NUM_6
 
+#define PARTICLE_DIAMOND_POOL_SIZE 8
+#define PARTICLE_EMERALD_POOL_SIZE 8
+
+#define PARTICLE_VERTICAL_BOUND_MIN (-96)
+#define PARTICLE_VERTICAL_BOUND_MAX 96
+#define PARTICLE_HORIZONTAL_BOUND_MIN (-96)
+#define PARTICLE_HORIZONTAL_BOUND_MAX 96
+
 static esp_lcd_panel_handle_t main_lcd_panel_handle;
 static lv_disp_t* lvgl_main_display_handle;
 
-static lv_obj_t* img;
+static lv_obj_t* lv_image_diamond_pickaxe;
+static lv_obj_t** lv_image_diamonds;
+static lv_obj_t** lv_image_emeralds;
 
 void init_spi_bus(){
     const spi_bus_config_t buscfg = {
@@ -101,36 +112,88 @@ void init_lvgl_disp(){
     lvgl_main_display_handle = lvgl_port_add_disp(&disp_cfg);
 }
 
-void init_lvgl_scene(void){
-    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x000000), LV_PART_MAIN);
+void particle_anim_start_cb(lv_anim_t* animation) {
+    int32_t x = PARTICLE_HORIZONTAL_BOUND_MIN + rand() %  (PARTICLE_HORIZONTAL_BOUND_MAX - PARTICLE_HORIZONTAL_BOUND_MIN);
+    int32_t y = PARTICLE_VERTICAL_BOUND_MIN + rand() %  (PARTICLE_VERTICAL_BOUND_MAX - PARTICLE_VERTICAL_BOUND_MIN);
 
-    LV_IMAGE_DECLARE(image);
-    img = lv_gif_create(lv_screen_active());
-    lv_gif_set_src(img, &image);
-    lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_pos(animation->var, x, y);
 }
 
-float curve_ease_in_out_sine(float x){
-    return (float) -(cos(MATH_PI * x) - 1) / 2;
+void particle_anim_exe_cb(void* obj, int32_t value){
+    if (value >= 176){
+        lv_obj_set_style_image_opa(obj, 352 - value, LV_STYLE_STATE_CMP_SAME);
+    }else {
+        lv_obj_set_style_image_opa(obj, value, LV_STYLE_STATE_CMP_SAME);
+    }
+    //lv_obj_set_style_image_opa(obj, value, LV_STYLE_STATE_CMP_SAME);
 }
 
-_Noreturn void task_animate_image(void* pvParameters){
-    uint32_t time = 0;
-    uint32_t duration = 150;
-    float half_duration = (float) duration / 2.0f;
-    float offset = 0;
 
-    while (1){
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-        offset = 48 * curve_ease_in_out_sine((float) time / half_duration);
-        lv_obj_set_y(img, 32 - (uint32_t) offset);
-        if (time++ >= duration){
-            time = 0;
-        }
+void pickaxe_anim_exe_cb(lv_anim_t* anim, int32_t value) {
+    if (value >= 64) {
+        lv_obj_set_y(anim->var, -32 + (128 - value));
+    }else{
+        lv_obj_set_y(anim->var, -32 + value);
     }
 }
 
+
+lv_obj_t** init_particle_pool(size_t size, const lv_image_dsc_t* dsc){
+    lv_obj_t** pool = calloc(size, sizeof(lv_obj_t*));
+    for (int i = 0; i < size; ++i) {
+        pool[i] = lv_image_create(lv_screen_active());
+        lv_image_set_src(pool[i], dsc);
+        lv_obj_align(pool[i], LV_ALIGN_CENTER, 0, 0);
+        lv_obj_set_style_image_opa(pool[i], 0, LV_STYLE_STATE_CMP_SAME);
+
+        lv_anim_t fade_in_anim;
+        lv_anim_init(&fade_in_anim);
+        lv_anim_set_var(&fade_in_anim, pool[i]);
+        lv_anim_set_duration(&fade_in_anim, 6000);
+        lv_anim_set_values(&fade_in_anim, 0, 352);
+        lv_anim_set_path_cb(&fade_in_anim, lv_anim_path_ease_in_out);
+        lv_anim_set_start_cb(&fade_in_anim, particle_anim_start_cb);
+        lv_anim_set_exec_cb(&fade_in_anim, particle_anim_exe_cb);
+
+        /*
+        lv_anim_t fade_out_anim;
+        lv_anim_init(&fade_out_anim);
+        lv_anim_set_var(&fade_out_anim, pool[i]);
+        lv_anim_set_duration(&fade_out_anim, 3000);
+        lv_anim_set_values(&fade_out_anim, 255, 0);
+        lv_anim_set_exec_cb(&fade_out_anim, particle_anim_exe_cb);
+        lv_anim_set_path_cb(&fade_out_anim, lv_anim_path_ease_in_out);
+         */
+
+        lv_anim_timeline_t* timeline = lv_anim_timeline_create();
+        lv_anim_timeline_add(timeline, random() % 3072, &fade_in_anim);
+        //lv_anim_timeline_add(timeline, lv_anim_timeline_get_playtime(timeline), &fade_out_anim);
+        lv_anim_timeline_set_repeat_delay(timeline, random() % 1024);
+        lv_anim_timeline_set_repeat_count(timeline, LV_ANIM_REPEAT_INFINITE);
+
+        lv_anim_timeline_start(timeline);
+    }
+    return pool;
+}
+
+void init_lvgl_scene(void){
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x000000), LV_PART_MAIN);
+
+    LV_IMAGE_DECLARE(image_diamond_pickaxe);
+    LV_IMAGE_DECLARE(image_diamond);
+    LV_IMAGE_DECLARE(image_emerald);
+
+    lv_image_diamonds = init_particle_pool(PARTICLE_DIAMOND_POOL_SIZE, &image_diamond);
+    lv_image_emeralds = init_particle_pool(PARTICLE_EMERALD_POOL_SIZE, &image_emerald);
+
+    lv_image_diamond_pickaxe = lv_gif_create(lv_screen_active());
+    lv_gif_set_src(lv_image_diamond_pickaxe, &image_diamond_pickaxe);
+    lv_obj_align(lv_image_diamond_pickaxe, LV_ALIGN_CENTER, 0, 0);
+}
+
 void app_main() {
+
+    srand(esp_random());
 
     init_spi_bus();
     init_lvgl_disp();
@@ -138,6 +201,5 @@ void app_main() {
 
     vTaskDelay(40 / portTICK_PERIOD_MS);
     esp_lcd_panel_disp_on_off(main_lcd_panel_handle, true);
-
-    xTaskCreate(&task_animate_image, "task_animate_image", 2048, NULL, 2, NULL);
+    
 }

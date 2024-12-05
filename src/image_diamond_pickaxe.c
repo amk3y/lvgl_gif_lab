@@ -2543,7 +2543,7 @@ uint8_t image_map[] = {
 
 };
 
-const lv_image_dsc_t image = {
+const lv_image_dsc_t image_diamond_pickaxe = {
   .header.magic = LV_IMAGE_HEADER_MAGIC,
   .header.cf = LV_COLOR_FORMAT_RAW,
   .header.flags = 0,
