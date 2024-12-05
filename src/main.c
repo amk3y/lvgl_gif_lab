@@ -26,10 +26,10 @@
 #define DISP_SCLK GPIO_NUM_4
 #define DISP_MOSI GPIO_NUM_6
 
-#define PARTICLE_DIAMOND_POOL_SIZE 6
-#define PARTICLE_EMERALD_POOL_SIZE 6
-#define PARTICLE_IRON_INGOT_POOL_SIZE 6
-#define PARTICLE_GOLD_INGOT_POOL_SIZE 6
+#define PARTICLE_DIAMOND_POOL_SIZE 3
+#define PARTICLE_EMERALD_POOL_SIZE 3
+#define PARTICLE_IRON_INGOT_POOL_SIZE 3
+#define PARTICLE_GOLD_INGOT_POOL_SIZE 3
 
 #define PARTICLE_VERTICAL_BOUND_MIN (-96)
 #define PARTICLE_VERTICAL_BOUND_MAX 96
@@ -118,31 +118,16 @@ void init_lvgl_disp(){
     lvgl_main_display_handle = lvgl_port_add_disp(&disp_cfg);
 }
 
-void particle_anim_start_cb(lv_anim_t* animation) {
+void anim_move_particle_randomly_on_start(lv_anim_t* animation) {
     int32_t x = PARTICLE_HORIZONTAL_BOUND_MIN + rand() %  (PARTICLE_HORIZONTAL_BOUND_MAX - PARTICLE_HORIZONTAL_BOUND_MIN);
     int32_t y = PARTICLE_VERTICAL_BOUND_MIN + rand() %  (PARTICLE_VERTICAL_BOUND_MAX - PARTICLE_VERTICAL_BOUND_MIN);
 
     lv_obj_set_pos(animation->var, x, y);
 }
 
-void particle_anim_exe_cb(void* obj, int32_t value){
-    if (value >= 176){
-        lv_obj_set_style_image_opa(obj, 352 - value, LV_STYLE_STATE_CMP_SAME);
-    }else {
-        lv_obj_set_style_image_opa(obj, value, LV_STYLE_STATE_CMP_SAME);
-    }
-    //lv_obj_set_style_image_opa(obj, value, LV_STYLE_STATE_CMP_SAME);
+void anim_cb_set_opa(lv_anim_t* anim, int32_t value){
+    lv_obj_set_style_image_opa(anim->var, value, 0);
 }
-
-
-void pickaxe_anim_exe_cb(lv_anim_t* anim, int32_t value) {
-    if (value >= 64) {
-        lv_obj_set_y(anim->var, -32 + (128 - value));
-    }else{
-        lv_obj_set_y(anim->var, -32 + value);
-    }
-}
-
 
 lv_obj_t** init_particle_pool(size_t size, const lv_image_dsc_t* dsc){
     lv_obj_t** pool = calloc(size, sizeof(lv_obj_t*));
@@ -150,30 +135,28 @@ lv_obj_t** init_particle_pool(size_t size, const lv_image_dsc_t* dsc){
         pool[i] = lv_image_create(lv_screen_active());
         lv_image_set_src(pool[i], dsc);
         lv_obj_align(pool[i], LV_ALIGN_CENTER, 0, 0);
-        lv_obj_set_style_image_opa(pool[i], 0, LV_STYLE_STATE_CMP_SAME);
+        lv_obj_set_style_image_opa(pool[i], 0, 0);
 
         lv_anim_t fade_in_anim;
         lv_anim_init(&fade_in_anim);
         lv_anim_set_var(&fade_in_anim, pool[i]);
-        lv_anim_set_duration(&fade_in_anim, 6000);
-        lv_anim_set_values(&fade_in_anim, 0, 352);
+        lv_anim_set_duration(&fade_in_anim, 3000);
+        lv_anim_set_values(&fade_in_anim, 0, 255);
         lv_anim_set_path_cb(&fade_in_anim, lv_anim_path_ease_in_out);
-        lv_anim_set_start_cb(&fade_in_anim, particle_anim_start_cb);
-        lv_anim_set_exec_cb(&fade_in_anim, particle_anim_exe_cb);
+        lv_anim_set_start_cb(&fade_in_anim, anim_move_particle_randomly_on_start);
+        lv_anim_set_custom_exec_cb(&fade_in_anim, anim_cb_set_opa);
 
-        /*
         lv_anim_t fade_out_anim;
         lv_anim_init(&fade_out_anim);
         lv_anim_set_var(&fade_out_anim, pool[i]);
         lv_anim_set_duration(&fade_out_anim, 3000);
         lv_anim_set_values(&fade_out_anim, 255, 0);
-        lv_anim_set_exec_cb(&fade_out_anim, particle_anim_exe_cb);
         lv_anim_set_path_cb(&fade_out_anim, lv_anim_path_ease_in_out);
-         */
+        lv_anim_set_custom_exec_cb(&fade_out_anim, anim_cb_set_opa);
 
         lv_anim_timeline_t* timeline = lv_anim_timeline_create();
-        lv_anim_timeline_add(timeline, random() % 3072, &fade_in_anim);
-        //lv_anim_timeline_add(timeline, lv_anim_timeline_get_playtime(timeline), &fade_out_anim);
+        lv_anim_timeline_add(timeline, random() % 2048, &fade_in_anim);
+        lv_anim_timeline_add(timeline, lv_anim_timeline_get_playtime(timeline), &fade_out_anim);
         lv_anim_timeline_set_repeat_delay(timeline, random() % 1024);
         lv_anim_timeline_set_repeat_count(timeline, LV_ANIM_REPEAT_INFINITE);
 
@@ -182,9 +165,7 @@ lv_obj_t** init_particle_pool(size_t size, const lv_image_dsc_t* dsc){
     return pool;
 }
 
-void init_lvgl_scene(void){
-    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x000000), LV_PART_MAIN);
-
+void anim_intro_end(lv_anim_t* anim){
     LV_IMAGE_DECLARE(image_diamond_pickaxe);
     LV_IMAGE_DECLARE(image_diamond);
     LV_IMAGE_DECLARE(image_emerald);
@@ -196,9 +177,64 @@ void init_lvgl_scene(void){
     lv_image_iron_ingots = init_particle_pool(PARTICLE_IRON_INGOT_POOL_SIZE, &image_iron_ingot);
     lv_image_gold_ingots = init_particle_pool(PARTICLE_GOLD_INGOT_POOL_SIZE, &image_gold_ingot);
 
+    lv_obj_t * mask = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(mask , 240, 240);
+    lv_obj_align(mask, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(mask ,lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_opa(mask ,LV_OPA_TRANSP, 0);
+    lv_obj_set_style_opa(mask ,160, 0);
+
     lv_image_diamond_pickaxe = lv_gif_create(lv_screen_active());
     lv_gif_set_src(lv_image_diamond_pickaxe, &image_diamond_pickaxe);
     lv_obj_align(lv_image_diamond_pickaxe, LV_ALIGN_CENTER, 0, 0);
+
+    lv_anim_t fade_in_anim;
+    lv_anim_init(&fade_in_anim);
+    lv_anim_set_duration(&fade_in_anim, 1000);
+    lv_anim_set_var(&fade_in_anim, lv_image_diamond_pickaxe);
+    lv_anim_set_values(&fade_in_anim,0, 255);
+    lv_anim_set_path_cb(&fade_in_anim, lv_anim_path_ease_in_out);
+    lv_anim_set_custom_exec_cb(&fade_in_anim, anim_cb_set_opa);
+
+    lv_anim_start(&fade_in_anim);
+
+    lv_obj_delete_async(anim->var);
+}
+
+void init_lvgl_scene(void){
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x000000), LV_PART_MAIN);
+}
+
+void enter_lvgl_scene(void){
+    LV_IMAGE_DECLARE(image_logo);
+
+    lv_obj_t* lv_image_logo = lv_image_create(lv_screen_active());
+    lv_obj_set_style_image_opa(lv_image_logo, LV_OPA_TRANSP, 0);
+    lv_image_set_src(lv_image_logo, &image_logo);
+    lv_obj_align(lv_image_logo, LV_ALIGN_CENTER, 0, 0);
+
+    lv_anim_t intro_anim;
+    lv_anim_init(&intro_anim);
+    lv_anim_set_duration(&intro_anim, 1000);
+    lv_anim_set_var(&intro_anim, lv_image_logo);
+    lv_anim_set_values(&intro_anim,0, 255);
+    lv_anim_set_path_cb(&intro_anim, lv_anim_path_ease_in_out);
+    lv_anim_set_custom_exec_cb(&intro_anim, anim_cb_set_opa);
+
+    lv_anim_t intro_fade_out_anim;
+    lv_anim_init(&intro_fade_out_anim);
+    lv_anim_set_duration(&intro_fade_out_anim, 1000);
+    lv_anim_set_var(&intro_fade_out_anim, lv_image_logo);
+    lv_anim_set_values(&intro_fade_out_anim,255, 0);
+    lv_anim_set_path_cb(&intro_fade_out_anim, lv_anim_path_ease_in_out);
+    lv_anim_set_custom_exec_cb(&intro_fade_out_anim, anim_cb_set_opa);
+    lv_anim_set_completed_cb(&intro_fade_out_anim, anim_intro_end);
+
+    lv_anim_timeline_t* timeline = lv_anim_timeline_create();
+    lv_anim_timeline_add(timeline, 10, &intro_anim);
+    lv_anim_timeline_add(timeline, 2000, &intro_fade_out_anim);
+
+    lv_anim_timeline_start(timeline);
 }
 
 void app_main() {
@@ -208,9 +244,10 @@ void app_main() {
     init_spi_bus();
     init_lvgl_disp();
     init_lvgl_scene();
-
     vTaskDelay(40 / portTICK_PERIOD_MS);
     esp_lcd_panel_disp_on_off(main_lcd_panel_handle, true);
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+    enter_lvgl_scene();
 
 #if PERF_MEM_USAGE == 1
     while (1) {
