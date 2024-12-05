@@ -12,8 +12,6 @@
 #include "driver/gpio.h"
 #include "driver/spi_common.h"
 
-#include "stdlib.h"
-
 #define MATH_PI 3.1415926
 
 #define PERF_MEM_USAGE 0
@@ -119,8 +117,8 @@ void init_lvgl_disp(){
 }
 
 void anim_move_particle_randomly_on_start(lv_anim_t* animation) {
-    int32_t x = PARTICLE_HORIZONTAL_BOUND_MIN + rand() %  (PARTICLE_HORIZONTAL_BOUND_MAX - PARTICLE_HORIZONTAL_BOUND_MIN);
-    int32_t y = PARTICLE_VERTICAL_BOUND_MIN + rand() %  (PARTICLE_VERTICAL_BOUND_MAX - PARTICLE_VERTICAL_BOUND_MIN);
+    int32_t x = PARTICLE_HORIZONTAL_BOUND_MIN + esp_random() %  (PARTICLE_HORIZONTAL_BOUND_MAX - PARTICLE_HORIZONTAL_BOUND_MIN);
+    int32_t y = PARTICLE_VERTICAL_BOUND_MIN + esp_random() %  (PARTICLE_VERTICAL_BOUND_MAX - PARTICLE_VERTICAL_BOUND_MIN);
 
     lv_obj_set_pos(animation->var, x, y);
 }
@@ -155,9 +153,9 @@ lv_obj_t** init_particle_pool(size_t size, const lv_image_dsc_t* dsc){
         lv_anim_set_custom_exec_cb(&fade_out_anim, anim_cb_set_opa);
 
         lv_anim_timeline_t* timeline = lv_anim_timeline_create();
-        lv_anim_timeline_add(timeline, random() % 2048, &fade_in_anim);
+        lv_anim_timeline_add(timeline, esp_random() % 2048, &fade_in_anim);
         lv_anim_timeline_add(timeline, lv_anim_timeline_get_playtime(timeline), &fade_out_anim);
-        lv_anim_timeline_set_repeat_delay(timeline, random() % 1024);
+        lv_anim_timeline_set_repeat_delay(timeline, esp_random() % 1024);
         lv_anim_timeline_set_repeat_count(timeline, LV_ANIM_REPEAT_INFINITE);
 
         lv_anim_timeline_start(timeline);
@@ -238,9 +236,6 @@ void enter_lvgl_scene(void){
 }
 
 void app_main() {
-
-    srand(esp_random());
-
     init_spi_bus();
     init_lvgl_disp();
     init_lvgl_scene();
