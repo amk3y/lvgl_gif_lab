@@ -12,7 +12,6 @@
 #include "driver/spi_common.h"
 
 #include "math.h"
-#include "memory.h"
 
 #define MATH_PI 3.1415926
 
