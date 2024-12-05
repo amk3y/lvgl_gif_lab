@@ -1,3 +1,4 @@
+#include <sys/cdefs.h>
 #include "freertos/FreeRTOS.h"
 
 #include "esp_log.h"
@@ -10,6 +11,11 @@
 #include "driver/gpio.h"
 #include "driver/spi_common.h"
 
+#include "math.h"
+#include "memory.h"
+
+#define MATH_PI 3.1415926
+
 #define DISP_WIDTH 240
 #define DISP_HEIGHT 240
 #define DISP_DRAW_BUFFER_HEIGHT 40
@@ -20,6 +26,8 @@
 
 static esp_lcd_panel_handle_t main_lcd_panel_handle;
 static lv_disp_t* lvgl_main_display_handle;
+
+static lv_obj_t* img;
 
 void init_spi_bus(){
     const spi_bus_config_t buscfg = {
@@ -98,9 +106,29 @@ void init_lvgl_scene(void){
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x000000), LV_PART_MAIN);
 
     LV_IMAGE_DECLARE(image);
-    lv_obj_t* img = lv_gif_create(lv_screen_active());
+    img = lv_gif_create(lv_screen_active());
     lv_gif_set_src(img, &image);
     lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
+}
+
+float curve_ease_in_out_sine(float x){
+    return (float) -(cos(MATH_PI * x) - 1) / 2;
+}
+
+_Noreturn void task_animate_image(void* pvParameters){
+    uint32_t time = 0;
+    uint32_t duration = 150;
+    float half_duration = (float) duration / 2.0f;
+    float offset = 0;
+
+    while (1){
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+        offset = 48 * curve_ease_in_out_sine((float) time / half_duration);
+        lv_obj_set_y(img, 32 - (uint32_t) offset);
+        if (time++ >= duration){
+            time = 0;
+        }
+    }
 }
 
 void app_main() {
@@ -111,4 +139,6 @@ void app_main() {
 
     vTaskDelay(40 / portTICK_PERIOD_MS);
     esp_lcd_panel_disp_on_off(main_lcd_panel_handle, true);
+
+    xTaskCreate(&task_animate_image, "task_animate_image", 2048, NULL, 2, NULL);
 }
