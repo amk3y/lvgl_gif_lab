@@ -95,7 +95,7 @@ void init_lvgl_disp(){
             },
             .flags = {
                     .buff_dma = true,
-                    .swap_bytes = false,
+                    .swap_bytes = true,
             }
     };
 
