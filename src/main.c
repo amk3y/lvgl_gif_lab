@@ -1,3 +1,13 @@
+#define USE_ST7735 1
+
+#ifdef USE_ST7789
+#include "cfg_st7789.h"
+#elif USE_ST7735
+#include "cfg_st7735.h"
+#elif
+#pragma message ("no display available")
+#endif
+
 #include "freertos/FreeRTOS.h"
 
 #include "esp_log.h"
@@ -8,6 +18,8 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_vendor.h"
 
+#include "esp_lcd_panel_st7789.h"
+
 #include "driver/gpio.h"
 #include "driver/spi_common.h"
 
@@ -15,26 +27,32 @@
 
 #define PERF_MEM_USAGE 0
 
-#define DISP_WIDTH 240
-#define DISP_HEIGHT 240
-#define DISP_DRAW_BUFFER_HEIGHT 40
-#define DISP_GPIO_RES GPIO_NUM_0
-#define DISP_GPIO_DC GPIO_NUM_1
+#define DESIGN_RESOLUTION_WIDTH 240
+#define DESIGN_RESOLUTION_HEIGHT 240
+
+#define PARTICLE_DIAMOND_POOL_SIZE 4
+#define PARTICLE_EMERALD_POOL_SIZE 4
+#define PARTICLE_IRON_INGOT_POOL_SIZE 4
+#define PARTICLE_GOLD_INGOT_POOL_SIZE 4
+
+LV_IMAGE_DECLARE(image_logo);
+LV_IMAGE_DECLARE(image_diamond_pickaxe);
+LV_IMAGE_DECLARE(image_diamond);
+LV_IMAGE_DECLARE(image_emerald);
+LV_IMAGE_DECLARE(image_iron_ingot);
+LV_IMAGE_DECLARE(image_gold_ingot);
+
 #define DISP_SCLK GPIO_NUM_4
 #define DISP_MOSI GPIO_NUM_6
 
-#define PARTICLE_DIAMOND_POOL_SIZE 3
-#define PARTICLE_EMERALD_POOL_SIZE 3
-#define PARTICLE_IRON_INGOT_POOL_SIZE 3
-#define PARTICLE_GOLD_INGOT_POOL_SIZE 3
-
-#define PARTICLE_VERTICAL_BOUND_MIN (-96)
-#define PARTICLE_VERTICAL_BOUND_MAX 96
-#define PARTICLE_HORIZONTAL_BOUND_MIN (-96)
-#define PARTICLE_HORIZONTAL_BOUND_MAX 96
-
 static esp_lcd_panel_handle_t main_lcd_panel_handle;
 static lv_disp_t* lvgl_main_display_handle;
+
+static uint32_t display_resolution_width = 0;
+static uint32_t display_resolution_height = 0;
+static uint32_t safe_area_width = 0;
+static uint32_t safe_area_height = 0;
+static float display_scale_factor = 0;
 
 static lv_obj_t* lv_image_diamond_pickaxe;
 static lv_obj_t** lv_image_diamonds;
@@ -54,72 +72,13 @@ void init_spi_bus(){
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
 }
 
-
-void init_lvgl_disp(){
-    const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    ESP_ERROR_CHECK(lvgl_port_init(&lvgl_cfg));
-
-    /* LCD IO */
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_io_spi_config_t io_config = {
-            .dc_gpio_num = DISP_GPIO_DC,
-            .cs_gpio_num = GPIO_NUM_NC,
-            .pclk_hz = 40 * 1000 * 1000,
-            .lcd_cmd_bits = 8,
-            .lcd_param_bits = 8,
-            // this varies depending on hardware
-            // bugfix ref: https://github.com/Bodmer/TFT_eSPI/issues/163
-            .spi_mode = 3,
-            .trans_queue_depth = 10,
-    };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t) SPI2_HOST, &io_config, &io_handle));
-
-    /* LCD driver initialization */
-
-    const esp_lcd_panel_dev_config_t panel_config = {
-            .reset_gpio_num = DISP_GPIO_RES,
-            .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
-            .bits_per_pixel = 16,
-    };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &main_lcd_panel_handle));
-
-    esp_lcd_panel_reset(main_lcd_panel_handle);
-    esp_lcd_panel_init(main_lcd_panel_handle);
-    // turn off display before first lvgl update to avoid flickering
-    esp_lcd_panel_disp_on_off(main_lcd_panel_handle, false);
-    // depend on hardware
-    esp_lcd_panel_invert_color(main_lcd_panel_handle, true);
-    esp_lcd_panel_set_gap(main_lcd_panel_handle, 0, 80);
-
-    /* Add LCD screen */
-    const lvgl_port_display_cfg_t disp_cfg = {
-            .io_handle = io_handle,
-            .panel_handle = main_lcd_panel_handle,
-            .buffer_size = DISP_HEIGHT * DISP_DRAW_BUFFER_HEIGHT * sizeof(uint16_t),
-            .double_buffer = true,
-            .hres = DISP_WIDTH,
-            .vres = DISP_HEIGHT,
-            .monochrome = false,
-            .color_format = LV_COLOR_FORMAT_RGB565,
-            .rotation = {
-                    .swap_xy = false,
-                    .mirror_x = true,
-                    .mirror_y = true,
-            },
-            .flags = {
-                    .buff_dma = true,
-                    .swap_bytes = true,
-            }
-    };
-
-    lvgl_main_display_handle = lvgl_port_add_disp(&disp_cfg);
-}
-
 void anim_move_particle_randomly_on_start(lv_anim_t* animation) {
-    int32_t x = PARTICLE_HORIZONTAL_BOUND_MIN + esp_random() %  (PARTICLE_HORIZONTAL_BOUND_MAX - PARTICLE_HORIZONTAL_BOUND_MIN);
-    int32_t y = PARTICLE_VERTICAL_BOUND_MIN + esp_random() %  (PARTICLE_VERTICAL_BOUND_MAX - PARTICLE_VERTICAL_BOUND_MIN);
+    uint32_t half_width = display_resolution_width / 2;
+    uint32_t half_height = display_resolution_height / 2;
+    int32_t x = (int32_t) (-half_width + (esp_random() % display_resolution_width));
+    int32_t y = (int32_t) (-half_height + (esp_random() % display_resolution_height));
 
-    lv_obj_set_pos(animation->var, x, y);
+    lv_obj_align(animation->var, LV_ALIGN_CENTER, x, y);
 }
 
 void anim_cb_set_opa(lv_anim_t* anim, int32_t value){
@@ -131,7 +90,8 @@ lv_obj_t** init_particle_pool(size_t size, const lv_image_dsc_t* dsc){
     for (int i = 0; i < size; ++i) {
         pool[i] = lv_image_create(lv_screen_active());
         lv_image_set_src(pool[i], dsc);
-        lv_obj_align(pool[i], LV_ALIGN_CENTER, 0, 0);
+        lv_image_set_scale(pool[i], (uint32_t) (256 * display_scale_factor));
+        lv_obj_align(pool[i], LV_ALIGN_TOP_LEFT, 0, 0);
         lv_obj_set_style_image_opa(pool[i], 0, 0);
 
         lv_anim_t fade_in_anim;
@@ -163,11 +123,7 @@ lv_obj_t** init_particle_pool(size_t size, const lv_image_dsc_t* dsc){
 }
 
 void anim_intro_end(lv_anim_t* anim){
-    LV_IMAGE_DECLARE(image_diamond_pickaxe);
-    LV_IMAGE_DECLARE(image_diamond);
-    LV_IMAGE_DECLARE(image_emerald);
-    LV_IMAGE_DECLARE(image_iron_ingot);
-    LV_IMAGE_DECLARE(image_gold_ingot);
+
 
     lv_image_diamonds = init_particle_pool(PARTICLE_DIAMOND_POOL_SIZE, &image_diamond);
     lv_image_emeralds = init_particle_pool(PARTICLE_EMERALD_POOL_SIZE, &image_emerald);
@@ -175,7 +131,7 @@ void anim_intro_end(lv_anim_t* anim){
     lv_image_gold_ingots = init_particle_pool(PARTICLE_GOLD_INGOT_POOL_SIZE, &image_gold_ingot);
 
     lv_obj_t * mask = lv_obj_create(lv_screen_active());
-    lv_obj_set_size(mask , 240, 240);
+    lv_obj_set_size(mask , lv_pct(100), lv_pct(100));
     lv_obj_align(mask, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(mask ,lv_color_hex(0x000000), 0);
     lv_obj_set_style_border_opa(mask ,LV_OPA_TRANSP, 0);
@@ -183,6 +139,8 @@ void anim_intro_end(lv_anim_t* anim){
 
     lv_image_diamond_pickaxe = lv_gif_create(lv_screen_active());
     lv_gif_set_src(lv_image_diamond_pickaxe, &image_diamond_pickaxe);
+    lv_image_set_scale(lv_image_diamond_pickaxe, (uint32_t) (256 * display_scale_factor));
+    lv_obj_set_size(lv_image_diamond_pickaxe, lv_pct(80),lv_pct(80));
     lv_obj_align(lv_image_diamond_pickaxe, LV_ALIGN_CENTER, 0, 0);
 
     lv_anim_t fade_in_anim;
@@ -203,11 +161,14 @@ void init_lvgl_scene(void){
 }
 
 void enter_lvgl_scene(void){
-    LV_IMAGE_DECLARE(image_logo);
+
+    lv_obj_set_scrollbar_mode(lv_screen_active(), LV_SCROLLBAR_MODE_OFF);
 
     lv_obj_t* lv_image_logo = lv_image_create(lv_screen_active());
     lv_obj_set_style_image_opa(lv_image_logo, LV_OPA_TRANSP, 0);
     lv_image_set_src(lv_image_logo, &image_logo);
+    lv_image_set_scale(lv_image_logo, (uint32_t) (256 * display_scale_factor));
+    lv_obj_set_size(lv_image_logo, lv_pct(80),lv_pct(80));
     lv_obj_align(lv_image_logo, LV_ALIGN_CENTER, 0, 0);
 
     lv_anim_t intro_fade_in_anim;
@@ -236,7 +197,20 @@ void enter_lvgl_scene(void){
 
 void app_main() {
     init_spi_bus();
-    init_lvgl_disp();
+    const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    ESP_ERROR_CHECK(lvgl_port_init(&lvgl_cfg));
+#ifdef USE_ST7735
+    lvgl_main_display_handle = init_display_st7735(&main_lcd_panel_handle);
+#elif USE_ST7789
+    lvgl_main_display_handle = init_display_st7789(&main_lcd_panel_handle);
+#endif
+
+    display_resolution_width = lv_display_get_horizontal_resolution(lvgl_main_display_handle);
+    display_resolution_height = lv_display_get_vertical_resolution(lvgl_main_display_handle);
+    display_scale_factor = (float) display_resolution_height / DESIGN_RESOLUTION_HEIGHT;
+    safe_area_width = (uint32_t) ((float) display_resolution_width * 0.8f);
+    safe_area_height = (uint32_t) ((float) display_resolution_height * 0.8f);
+
     init_lvgl_scene();
     vTaskDelay(40 / portTICK_PERIOD_MS);
     esp_lcd_panel_disp_on_off(main_lcd_panel_handle, true);
